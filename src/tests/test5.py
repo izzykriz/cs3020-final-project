@@ -1,7 +1,11 @@
-def fib(n: int) -> int:
-    if n <= 1:
-        return n
-    else:
-        return fib(n-1) + fib(n-2)
+class Object:
+    def __init__(self, a: int, b: int):
+        self.a = a
+        self.b = b
 
-print(fib(10))
+    def add_nums(self):
+        return self.a + self.b
+
+
+o = Object(2, 3)
+print(o.add_nums())
