@@ -15,6 +15,7 @@ gensym_num = 0
 global_logging = True
 
 tuple_var_types = {}
+class_types = {}
 function_names = set()
 
 
@@ -63,6 +64,11 @@ class Callable:
     args: List[type]
     output_type: type
 
+@dataclass
+class CustomType:
+    __class_name__: str
+    vars: List[type]
+
 
 def typecheck(program: Program) -> Program:
     """
@@ -99,12 +105,30 @@ def typecheck(program: Program) -> Program:
 
     def tc_exp(e: Expr, env: TEnv) -> type:
         match e:
+            case FieldRef(var, class_field):
+                # We should check our var is a CustomType and it has the field we want
+                # If it does we return that type
+
+                # This should already return name of class
+                type_of_var = tc_exp(var, env)
+                assert isinstance(type_of_var, str) # We are saving CustomClasses as strings
+                var_name_in_env = type_of_var + '.' + class_field
+                return env[var_name_in_env]
+
+
             case Call(func, args):
                 arg_types = [tc_exp(a, env) for a in args]
                 match tc_exp(func, env):
                     case Callable(param_types, return_type):
                         assert param_types == arg_types
                         return return_type
+                    case str() as class_name:
+                        assert class_name in class_types
+                        class_fields = class_types[class_name].vars
+                        param_types = [ field[1] for field in class_fields ]
+                        assert param_types == arg_types
+                        return class_name
+
                     case t:
                         raise Exception("expected function type, but got:", t)
 
@@ -140,6 +164,19 @@ def typecheck(program: Program) -> Program:
 
     def tc_stmt(s: Stmt, env: TEnv):
         match s:
+
+            case ClassDef(name, superclass, variables):
+                # Add name to class environment
+                # add variables to type check
+                class_types[name] = CustomType(__class_name__ = name, vars = variables)
+
+                # Calling class name returns a constructor of the class
+                env[name] = name
+                for var in variables:
+                    varname = var[0]
+                    env[name+'.'+varname] = var[1]
+
+
             case FunctionDef(name, params, body_stmts, return_type):
                 function_names.add(name)
                 arg_types = [t for x, t in params]
@@ -147,8 +184,13 @@ def typecheck(program: Program) -> Program:
                 new_env = env.copy()
 
                 for x, t in params:
-                    new_env[x] = t
+                    if t in env:
+                        new_env[x] = env[t]
+                    else:
+                        new_env[x] = t
 
+                if return_type in env:
+                    return_type = env[return_type]
                 new_env["return value"] = return_type
                 tc_stmts(body_stmts, new_env)
 

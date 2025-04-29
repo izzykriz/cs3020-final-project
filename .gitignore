@@ -3,5 +3,7 @@
 *.lock
 .idea
 venv
+./venv
+./venv/*
 __pycache__
 .mypy_cache
