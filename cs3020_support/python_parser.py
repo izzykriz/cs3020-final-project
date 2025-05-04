@@ -36,10 +36,16 @@ def parse(s):
         return [trans_stmt(s) for s in stmts]
 
     def trans_classdef(decl):
+        # What exactly is this function meant to do?
         match decl:
-            # todo: hitting the base case here and throwing an exception
-            case ast.ClassDef(d):
-                return d
+            case ast.FunctionDef(name, params, body, return_type):
+                # todo: this case catches it, but I'm not sure what to do now that I have it
+                '''
+                # To process a function, it does this
+                new_args = [(a.arg, get_type(a.annotation)) for a in params]
+                new_stmts = trans_stmts(body)
+                '''
+                pass
             case ast.AnnAssign(ast.Name(x), t, _, _):
                 return (x, get_type(t))
             case _:
@@ -71,8 +77,11 @@ def parse(s):
                 return ClassDef(name, None, [])
 
             case ast.ClassDef(name, [], [], decls, []):
-                # todo: we're hitting this case, which sends it to trans_classdef and fails
-                new_decls = [] if ast.Pass() in decls else [trans_classdef(d) for d in decls]
+                if ast.Pass() in decls:
+                    new_decls = []
+                else:
+                    # todo: what exactly is decls?
+                    [trans_classdef(d) for d in decls]
                 return ClassDef(name, None, new_decls)
 
             case ast.ClassDef(name, [ast.Name(x)], [], [ast.Pass()], []):
