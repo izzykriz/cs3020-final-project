@@ -1,5 +1,5 @@
 from dataclasses import dataclass, fields
-from typing import List, Tuple
+from typing import List, Tuple, Dict
 
 # ==================================================
 # AST Definition
@@ -20,6 +20,7 @@ class Stmt(AST):
 @dataclass(frozen=True, eq=True)
 class Program(AST):
     stmts: List[Stmt]
+    #data_types: Dict[str, int]
 
 # ==================================================
 # statements

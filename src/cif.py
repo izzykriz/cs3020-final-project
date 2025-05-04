@@ -72,6 +72,12 @@ class If(Stmt):
 #     blocks: Dict[str, List[Stmt]]
 
 @dataclass(frozen=True, eq=True)
+class ClassDef(Stmt):
+    name: str
+    superclass: str
+    body: List[Stmt]
+
+@dataclass(frozen=True, eq=True)
 class CFunctionDef(AST):
     name: str
     args: List[str]

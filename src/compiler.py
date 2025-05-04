@@ -16,6 +16,7 @@ global_logging = True
 
 tuple_var_types = {}
 class_types = {}
+class_var_types = {}
 function_names = set()
 
 
@@ -123,7 +124,10 @@ def typecheck(program: Program) -> Program:
                         assert param_types == arg_types
                         return return_type
                     case str() as class_name:
+
+                        #A class must be defined for the function call
                         assert class_name in class_types
+                        #All the class fields must be the fields we construct with
                         class_fields = class_types[class_name].vars
                         param_types = [ field[1] for field in class_fields ]
                         assert param_types == arg_types
@@ -165,14 +169,14 @@ def typecheck(program: Program) -> Program:
     def tc_stmt(s: Stmt, env: TEnv):
         match s:
 
-            case ClassDef(name, superclass, variables):
+            case ClassDef(name, superclass, body):
                 # Add name to class environment
                 # add variables to type check
-                class_types[name] = CustomType(__class_name__ = name, vars = variables)
+                class_types[name] = CustomType(__class_name__ = name, vars = body)
 
                 # Calling class name returns a constructor of the class
                 env[name] = name
-                for var in variables:
+                for var in body:
                     varname = var[0]
                     env[name+'.'+varname] = var[1]
 
@@ -196,6 +200,9 @@ def typecheck(program: Program) -> Program:
 
                 for x in new_env:
                     if isinstance(new_env[x], tuple):
+                        tuple_var_types[x] = new_env[x]
+                    if isinstance(new_env[x], str):
+                        class_var_types[x] = new_env[x]
                         tuple_var_types[x] = new_env[x]
 
             case Return(e):
@@ -231,6 +238,9 @@ def typecheck(program: Program) -> Program:
             for x in env:
                 if isinstance(env[x], tuple):
                     tuple_var_types[x] = env[x]
+                if isinstance(env[x], str):
+                    class_var_types[x] = env[x]
+                    tuple_var_types[x] = env[x]
 
             return program
 
@@ -258,6 +268,9 @@ def rco(prog: Program) -> Program:
 
     def rco_stmt(stmt: Stmt, new_stmts: List[Stmt]) -> Stmt:
         match stmt:
+
+            case ClassDef(name, superclass, body):
+                return ClassDef(name, superclass, body)
             case FunctionDef(name, params, body_stmts, return_type):
                 return FunctionDef(name, params, rco_stmts(body_stmts), return_type)
             case Return(e):
@@ -295,6 +308,16 @@ def rco(prog: Program) -> Program:
 
     def rco_exp(e: Expr, new_stmts: List[Stmt]) -> Expr:
         match e:
+
+            case FieldRef(var, class_field):
+                new_v = gensym('tmp')
+                new_stmts.append(
+                    Assign(
+                        new_v,
+                        FieldRef(var, class_field)
+                    )
+                )
+                return Var(new_v)
             case Call(func, args):
                 new_args = [rco_exp(e, new_stmts) for e in args]
                 new_func = rco_exp(func, new_stmts)
@@ -320,17 +343,101 @@ def rco(prog: Program) -> Program:
             return Program(rco_stmts(stmts))
 
 
-##################################################
-# explicate-control
-##################################################
-# op     ::= "add" | "sub" | "mult" | "not" | "or" | "and" | "eq" | "gt" | "gte" | "lt" | "lte"
-#          | "subscript" | "allocate" | "collect" | "tuple_set"
-# Expr   ::= Var(x) | Constant(n) | Prim(op, List[Expr])
-#          | Call(Expr, List[Expr])
-# Stmt   ::= Assign(x, Expr) | Print(Expr) | If(Expr, Stmts, Stmts) | While(Begin(Stmts, Expr), Stmts)
-#          | Return(Expr) | FunctionDef(str, List[Tuple[str, type]], List[Stmt], type)
-# Stmts  ::= List[Stmt]
-# LFun   ::= Program(Stmts)
+''' Idea here:
+- So we wat to turm field refs to tuple calls
+- class creatioms to tuples 
+- amd we wamt to turm class defs imto somethimg that still exists im the prog vut 
+    they domt mecessarily meed to ve im the program (Mo imstructiom exists im x86 to defime classes...)
+some of my keys domt work srry - Mora
+'''
+def create_classes(prog: Program) -> Program:
+    data_types: Dict[str, int] = {}
+
+    def get_field_pos(class_name, field):
+
+        for i, class_field in enumerate(class_types[class_name].vars):
+            if field == class_field[0]:
+                return i
+        raise Exception("Create classes. Field not found", class_name, field)
+
+
+    def cc_exp(e: Expr):
+        match e:
+            case FieldRef(var, field_name):
+                class_name = class_var_types[var.name]
+                subscript_pos = get_field_pos(class_name, field_name)
+                return Prim("subscript",[
+                    var,
+                    Constant(subscript_pos)
+                ])
+            case Call(func, args):
+                if func.name in class_types.keys():
+                    return Prim(
+                        'tuple',
+                        args
+                    )
+                else:
+                    return e
+            case Prim() | Constant() | Var():
+                return e
+            case _:
+                raise Exception("explicate_exp", e)
+
+
+    def cc_stmt(stmt):
+        match stmt:
+            case ClassDef(name, superclass, fields):
+                return None
+            case Return(e):
+                new_exp = cc_exp(e)
+                return Return(new_exp)
+            case Assign(x, exp):
+                new_exp = cc_exp(exp)
+                return Assign(x, new_exp)
+            case Print(exp):
+                new_exp = cc_exp(exp)
+                return Print(new_exp)
+            case If(condition, then_stmts, else_stmts):
+
+                new_then_stmts = cc_exp(then_stmts)
+
+
+                new_else_stmts = cc_exp(else_stmts)
+
+                if_stmt = cif.If(
+                    cc_exp(condition), new_then_stmts, new_else_stmts
+                )
+                return if_stmt
+            case While(Begin(condition_stmts, condition_exp), body_stmts):
+
+                new_condition_stmts = cc_stmts(condition_stmts)
+                new_body_stmts = cc_stmts(body_stmts)
+                new_condition_exp = cc_exp(condition_exp)
+
+                return While(
+                    Begin(
+                        new_condition_stmts,
+                        new_condition_exp
+                    ),
+                    new_body_stmts
+                )
+            case FunctionDef(name, params, body, ret_type):
+                fun_stmts = cc_stmts(body)
+                return FunctionDef(name, params, fun_stmts, ret_type)
+            case _:
+                raise Exception("create_classes", stmt)
+
+    def cc_stmts(stmts: List[Stmt]) -> List[Stmt]:
+        new_stmts = []
+        for stmt in stmts:
+            new_stmt = cc_stmt(stmt)
+            if new_stmt:
+                new_stmts.append( new_stmt )
+        return new_stmts
+    match prog:
+        case Program(stmts):
+            new_stmts = cc_stmts(stmts)
+            return Program(new_stmts)
 
 
 def explicate_control(prog: Program) -> cif.CProgram:
@@ -1274,6 +1381,7 @@ compiler_passes = {
     "typecheck": typecheck,
     "remove complex opera*": rco,
     "typecheck2": typecheck,
+    "create classes": create_classes,
     "explicate control": explicate_control,
     "select instructions": select_instructions,
     "allocate registers": allocate_registers,
