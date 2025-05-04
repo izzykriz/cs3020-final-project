@@ -34,8 +34,12 @@ def parse(s):
                 raise Exception('trans_prog', e)
     def trans_stmts(stmts):
         return [trans_stmt(s) for s in stmts]
+
     def trans_classdef(decl):
         match decl:
+            # todo: hitting the base case here and throwing an exception
+            case ast.ClassDef(d):
+                return d
             case ast.AnnAssign(ast.Name(x), t, _, _):
                 return (x, get_type(t))
             case _:
@@ -57,22 +61,30 @@ def parse(s):
                 return For(x, trans_expr(it), trans_stmts(body))
             case ast.Return(e1):
                 return Return(trans_expr(e1))
+
             case ast.FunctionDef(name, args, stmts, _, typ, _):
                 new_args = [(a.arg, get_type(a.annotation)) for a in args.args]
                 new_stmts = trans_stmts(stmts)
                 return FunctionDef(name, new_args, new_stmts, get_type(typ))
+
             case ast.ClassDef(name, [], [], [ast.Pass()], []):
                 return ClassDef(name, None, [])
+
             case ast.ClassDef(name, [], [], decls, []):
+                # todo: we're hitting this case, which sends it to trans_classdef and fails
                 new_decls = [] if ast.Pass() in decls else [trans_classdef(d) for d in decls]
                 return ClassDef(name, None, new_decls)
+
             case ast.ClassDef(name, [ast.Name(x)], [], [ast.Pass()], []):
                 return ClassDef(name, x, [])
+
             case ast.ClassDef(name, [ast.Name(x)], [], decls, []):
                 new_decls = [] if ast.Pass() in decls else [trans_classdef(d) for d in decls]
                 return ClassDef(name, x, new_decls)
+
             case _:
                 raise Exception('trans_stmt', s)
+
     def trans_expr(e):
         match e:
             case ast.Compare(e1, [op], [e2]):
