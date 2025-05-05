@@ -5,6 +5,7 @@ import ast
 # Parser & AST translator
 # ==================================================
 
+
 def parse(s):
     # Returns the "simple" name of an object's type
     def name_of(op):
@@ -13,9 +14,9 @@ def parse(s):
     # turns a type annotation into a type
     def get_type(a):
         match a:
-            case ast.Name('int'):
+            case ast.Name("int"):
                 return int
-            case ast.Name('bool'):
+            case ast.Name("bool"):
                 return bool
             case ast.Tuple(args):
                 return tuple([get_type(a) for a in args])
@@ -24,14 +25,15 @@ def parse(s):
             case None:
                 return None
             case _:
-                raise Exception('get_type', ast.dump(a))
+                raise Exception("get_type", ast.dump(a))
 
     def trans_prog(e):
         match e:
             case ast.Module(stmts):
                 return Program(trans_stmts(stmts))
             case _:
-                raise Exception('trans_prog', e)
+                raise Exception("trans_prog", e)
+
     def trans_stmts(stmts):
         return [trans_stmt(s) for s in stmts]
 
@@ -46,11 +48,11 @@ def parse(s):
             case ast.AnnAssign(ast.Name(x), t, _, _):
                 return (x, get_type(t))
             case _:
-                raise Exception('trans_classdef', decl)
-                
+                raise Exception("trans_classdef", decl)
+
     def trans_stmt(s):
         match s:
-            case ast.Expr(ast.Call(ast.Name('print'), [e])):
+            case ast.Expr(ast.Call(ast.Name("print"), [e])):
                 return Print(trans_expr(e))
 
             # NOTE: This is to handle calls to objects, don't know if it's correct
@@ -59,12 +61,10 @@ def parse(s):
             case ast.Assign([ast.Name(n)], e):
                 return Assign(n, trans_expr(e))
 
-            #case ast.Assign
+            # case ast.Assign
 
             case ast.If(e1, stmts1, stmts2):
-                return If(trans_expr(e1),
-                          trans_stmts(stmts1),
-                          trans_stmts(stmts2))
+                return If(trans_expr(e1), trans_stmts(stmts1), trans_stmts(stmts2))
             case ast.While(condition, stmts, []):
                 return While(trans_expr(condition), trans_stmts(stmts))
             case ast.For(ast.Name(x), it, body):
@@ -91,14 +91,16 @@ def parse(s):
                 return ClassDef(name, x, [])
 
             case ast.ClassDef(name, [ast.Name(x)], [], decls, []):
-                new_decls = [] if ast.Pass() in decls else [trans_classdef(d) for d in decls]
+                new_decls = (
+                    [] if ast.Pass() in decls else [trans_classdef(d) for d in decls]
+                )
                 return ClassDef(name, x, new_decls)
 
             case ast.AnnAssign(ast.Name(x), t, _, _):
                 return (x, get_type(t))
 
             case _:
-                raise Exception('trans_stmt', s)
+                raise Exception("trans_stmt", s)
 
     def trans_expr(e):
         match e:
@@ -109,21 +111,21 @@ def parse(s):
                 return Prim(name_of(op), [trans_expr(e1), trans_expr(e2)])
             case ast.UnaryOp(op, e1):
                 return Prim(name_of(op), [trans_expr(e1)])
-            case ast.Call(ast.Name('print'), [e]):
-                return Prim('print', [trans_expr(e)])
+            case ast.Call(ast.Name("print"), [e]):
+                return Prim("print", [trans_expr(e)])
             case ast.Constant(c):
                 assert isinstance(c, (bool, int))
                 return Constant(c)
             case ast.BinOp(e1, ast.Add(), e2):
-                return Prim('add', [trans_expr(e1), trans_expr(e2)])
+                return Prim("add", [trans_expr(e1), trans_expr(e2)])
             case ast.BinOp(e1, ast.Mult(), e2):
-                return Prim('mult', [trans_expr(e1), trans_expr(e2)])
+                return Prim("mult", [trans_expr(e1), trans_expr(e2)])
             case ast.BinOp(e1, ast.Sub(), e2):
-                return Prim('sub', [trans_expr(e1), trans_expr(e2)])
+                return Prim("sub", [trans_expr(e1), trans_expr(e2)])
             case ast.Tuple(args):
-                return Prim('tuple', [trans_expr(a) for a in args])
+                return Prim("tuple", [trans_expr(a) for a in args])
             case ast.Subscript(e1, e2):
-                return Prim('subscript', [trans_expr(e1), trans_expr(e2)])
+                return Prim("subscript", [trans_expr(e1), trans_expr(e2)])
             case ast.Name(n):
                 return Var(n)
             case ast.Call(e1, args):
@@ -131,7 +133,7 @@ def parse(s):
             case ast.Attribute(e1, f):
                 return FieldRef(trans_expr(e1), f)
             case _:
-                raise Exception('trans_expr', e)
+                raise Exception("trans_expr", e)
 
     python_ast = ast.parse(s)
     return trans_prog(python_ast)

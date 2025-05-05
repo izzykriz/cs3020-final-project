@@ -1,4 +1,7 @@
-class Point:
-    def __init__(self, x, y):
-        self.x = x
-        self.y = y
+class Obj:
+    def six(self: Obj) -> int:
+        return 6
+
+
+o = Obj()
+print(o.six())

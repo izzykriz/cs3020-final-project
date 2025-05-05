@@ -69,7 +69,7 @@ class Callable:
 @dataclass
 class CustomType:
     __class_name__: str
-    vars: List[type]
+    vars: List[tuple[str, type]]
 
 
 def typecheck(program: Program) -> Program:
@@ -116,13 +116,17 @@ def typecheck(program: Program) -> Program:
                 assert isinstance(
                     type_of_var, str
                 )  # We are saving CustomClasses as strings
-                var_name_in_env = type_of_var + "." + class_field
-                return env[var_name_in_env]
+                for field in class_types[type_of_var].vars:
+                    if field[0] == class_field:
+                        return field[1]
+                raise Exception(f"field {class_field} not found")
 
             case Call(func, args):
+                arg_types = []
                 if isinstance(func, FieldRef):
-                    args.append(func.lhs)
-                arg_types = [tc_exp(a, env) for a in args]
+                    arg_types.append(tc_exp(func.lhs, env))
+                arg_types += [tc_exp(a, env) for a in args]
+
                 match tc_exp(func, env):
                     case Callable(param_types, return_type):
                         assert param_types == arg_types
@@ -135,7 +139,7 @@ def typecheck(program: Program) -> Program:
                         class_fields = [
                             var
                             for var in class_types[class_name].vars
-                            if not isinstance(var, FunctionDef)
+                            if not isinstance(var[1], Callable)
                         ]
                         param_types = [field[1] for field in class_fields]
                         assert param_types == arg_types
@@ -180,7 +184,8 @@ def typecheck(program: Program) -> Program:
             case ClassDef(name, superclass, body):
                 # Add name to class environment
                 # add variables to type check
-                class_types[name] = CustomType(__class_name__=name, vars=body)
+                if name not in class_types.keys():
+                    class_types[name] = CustomType(__class_name__=name, vars=[])
 
                 # Calling class name returns a constructor of the class
                 env[name] = name
@@ -195,9 +200,21 @@ def typecheck(program: Program) -> Program:
                             ),
                             env,
                         )
+                        if (line.name, env[name + "." + line.name]) not in class_types[
+                            name
+                        ].vars:
+                            class_types[name].vars.append(
+                                (line.name, env[name + "." + line.name])
+                            )
                     else:
                         varname = line[0]
                         env[name + "." + varname] = line[1]
+                        if (varname, env[name + "." + varname]) not in class_types[
+                            name
+                        ].vars:
+                            class_types[name].vars.append(
+                                (varname, env[name + "." + varname])
+                            )
 
             case FunctionDef(name, params, body_stmts, return_type):
                 function_names.add(name)
@@ -288,7 +305,8 @@ def rco(prog: Program) -> Program:
         match stmt:
 
             case ClassDef(name, superclass, body):
-                return ClassDef(name, superclass, body)
+                body_funcs = [stmt for stmt in body if isinstance(stmt, FunctionDef)]
+                return ClassDef(name, superclass, rco_stmts(body_funcs))
             case FunctionDef(name, params, body_stmts, return_type):
                 return FunctionDef(name, params, rco_stmts(body_stmts), return_type)
             case Return(e):
@@ -332,7 +350,10 @@ def rco(prog: Program) -> Program:
                 new_stmts.append(Assign(new_v, FieldRef(var, class_field)))
                 return Var(new_v)
             case Call(func, args):
-                new_args = [rco_exp(e, new_stmts) for e in args]
+                new_args = []
+                if isinstance(func, FieldRef):
+                    new_args.append(rco_exp(func.lhs, new_stmts))
+                new_args += [rco_exp(e, new_stmts) for e in args]
                 new_func = rco_exp(func, new_stmts)
                 new_e = Call(new_func, new_args)
                 new_v = gensym("tmp")
@@ -381,8 +402,15 @@ def create_classes(prog: Program) -> Program:
                 subscript_pos = get_field_pos(class_name, field_name)
                 return Prim("subscript", [var, Constant(subscript_pos)])
             case Call(func, args):
+                if isinstance(func, FieldRef):
+                    return cc_exp(func)
                 if func.name in class_types.keys():
-                    return Prim("tuple", args)
+                    class_funcs = [
+                        Var(f[0])
+                        for f in class_types[func.name].vars
+                        if isinstance(f[1], Callable)
+                    ]
+                    return Prim("tuple", args + class_funcs)
                 else:
                     return e
             case Prim() | Constant() | Var():
@@ -392,17 +420,21 @@ def create_classes(prog: Program) -> Program:
 
     def cc_stmt(stmt):
         match stmt:
-            case ClassDef(name, superclass, fields):
-                return None
+            case ClassDef(name, superclass, body):
+                new_stmts = []
+                for stmt in body:
+                    if isinstance(stmt, FunctionDef):
+                        new_stmts += cc_stmt(stmt)
+                return new_stmts
             case Return(e):
                 new_exp = cc_exp(e)
-                return Return(new_exp)
+                return [Return(new_exp)]
             case Assign(x, exp):
                 new_exp = cc_exp(exp)
-                return Assign(x, new_exp)
+                return [Assign(x, new_exp)]
             case Print(exp):
                 new_exp = cc_exp(exp)
-                return Print(new_exp)
+                return [Print(new_exp)]
             case If(condition, then_stmts, else_stmts):
 
                 new_then_stmts = cc_exp(then_stmts)
@@ -410,28 +442,26 @@ def create_classes(prog: Program) -> Program:
                 new_else_stmts = cc_exp(else_stmts)
 
                 if_stmt = cif.If(cc_exp(condition), new_then_stmts, new_else_stmts)
-                return if_stmt
+                return [if_stmt]
             case While(Begin(condition_stmts, condition_exp), body_stmts):
 
                 new_condition_stmts = cc_stmts(condition_stmts)
                 new_body_stmts = cc_stmts(body_stmts)
                 new_condition_exp = cc_exp(condition_exp)
 
-                return While(
-                    Begin(new_condition_stmts, new_condition_exp), new_body_stmts
-                )
+                return [
+                    While(Begin(new_condition_stmts, new_condition_exp), new_body_stmts)
+                ]
             case FunctionDef(name, params, body, ret_type):
                 fun_stmts = cc_stmts(body)
-                return FunctionDef(name, params, fun_stmts, ret_type)
+                return [FunctionDef(name, params, fun_stmts, ret_type)]
             case _:
                 raise Exception("create_classes", stmt)
 
     def cc_stmts(stmts: List[Stmt]) -> List[Stmt]:
         new_stmts = []
         for stmt in stmts:
-            new_stmt = cc_stmt(stmt)
-            if new_stmt:
-                new_stmts.append(new_stmt)
+            new_stmts += cc_stmt(stmt)
         return new_stmts
 
     match prog:
