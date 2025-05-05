@@ -38,14 +38,10 @@ def parse(s):
     def trans_classdef(decl):
         # What exactly is this function meant to do?
         match decl:
-            case ast.FunctionDef(name, params, body, return_type):
-                # todo: this case catches it, but I'm not sure what to do now that I have it
-                '''
-                # To process a function, it does this
-                new_args = [(a.arg, get_type(a.annotation)) for a in params]
-                new_stmts = trans_stmts(body)
-                '''
-                pass
+            case ast.FunctionDef(name, args, stmts, _, typ, _):
+                new_args = [(a.arg, get_type(a.annotation)) for a in args.args]
+                new_stmts = trans_stmts(stmts)
+                return FunctionDef(name, new_args, new_stmts, get_type(typ))
             case ast.AnnAssign(ast.Name(x), t, _, _):
                 return (x, get_type(t))
             case _:
@@ -80,7 +76,6 @@ def parse(s):
                 if ast.Pass() in decls:
                     new_decls = []
                 else:
-                    # todo: what exactly is decls?
                     [trans_classdef(d) for d in decls]
                 return ClassDef(name, None, new_decls)
 
