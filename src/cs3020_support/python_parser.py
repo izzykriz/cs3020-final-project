@@ -38,6 +38,7 @@ def parse(s):
     def trans_classdef(decl):
         # What exactly is this function meant to do?
         match decl:
+            # NOTE: This is to handle function definitions inside of classes, I don't know if it's correct
             case ast.FunctionDef(name, args, stmts, _, typ, _):
                 new_args = [(a.arg, get_type(a.annotation)) for a in args.args]
                 new_stmts = trans_stmts(stmts)
@@ -51,6 +52,10 @@ def parse(s):
         match s:
             case ast.Expr(ast.Call(ast.Name('print'), [e])):
                 return Print(trans_expr(e))
+
+            # NOTE: This is to handle calls to objects, don't know if it's correct
+            case ast.Expr(ast.Call(name, args)):
+                return Call(name, args)
             case ast.Assign([ast.Name(n)], e):
                 return Assign(n, trans_expr(e))
 
@@ -88,6 +93,9 @@ def parse(s):
             case ast.ClassDef(name, [ast.Name(x)], [], decls, []):
                 new_decls = [] if ast.Pass() in decls else [trans_classdef(d) for d in decls]
                 return ClassDef(name, x, new_decls)
+
+            case ast.AnnAssign(ast.Name(x), t, _, _):
+                return (x, get_type(t))
 
             case _:
                 raise Exception('trans_stmt', s)
