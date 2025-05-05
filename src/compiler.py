@@ -65,6 +65,7 @@ class Callable:
     args: List[type]
     output_type: type
 
+
 @dataclass
 class CustomType:
     __class_name__: str
@@ -112,12 +113,15 @@ def typecheck(program: Program) -> Program:
 
                 # This should already return name of class
                 type_of_var = tc_exp(var, env)
-                assert isinstance(type_of_var, str) # We are saving CustomClasses as strings
-                var_name_in_env = type_of_var + '.' + class_field
+                assert isinstance(
+                    type_of_var, str
+                )  # We are saving CustomClasses as strings
+                var_name_in_env = type_of_var + "." + class_field
                 return env[var_name_in_env]
 
-
             case Call(func, args):
+                if isinstance(func, FieldRef):
+                    args.append(func.lhs)
                 arg_types = [tc_exp(a, env) for a in args]
                 match tc_exp(func, env):
                     case Callable(param_types, return_type):
@@ -125,11 +129,15 @@ def typecheck(program: Program) -> Program:
                         return return_type
                     case str() as class_name:
 
-                        #A class must be defined for the function call
+                        # A class must be defined for the function call
                         assert class_name in class_types
-                        #All the class fields must be the fields we construct with
-                        class_fields = class_types[class_name].vars
-                        param_types = [ field[1] for field in class_fields ]
+                        # All the class fields must be the fields we construct with
+                        class_fields = [
+                            var
+                            for var in class_types[class_name].vars
+                            if not isinstance(var, FunctionDef)
+                        ]
+                        param_types = [field[1] for field in class_fields]
                         assert param_types == arg_types
                         return class_name
 
@@ -172,14 +180,24 @@ def typecheck(program: Program) -> Program:
             case ClassDef(name, superclass, body):
                 # Add name to class environment
                 # add variables to type check
-                class_types[name] = CustomType(__class_name__ = name, vars = body)
+                class_types[name] = CustomType(__class_name__=name, vars=body)
 
                 # Calling class name returns a constructor of the class
                 env[name] = name
-                for var in body:
-                    varname = var[0]
-                    env[name+'.'+varname] = var[1]
-
+                for line in body:
+                    if isinstance(line, FunctionDef):
+                        tc_stmt(
+                            FunctionDef(
+                                name + "." + line.name,
+                                line.params,
+                                line.body,
+                                line.return_type,
+                            ),
+                            env,
+                        )
+                    else:
+                        varname = line[0]
+                        env[name + "." + varname] = line[1]
 
             case FunctionDef(name, params, body_stmts, return_type):
                 function_names.add(name)
@@ -188,8 +206,8 @@ def typecheck(program: Program) -> Program:
                 new_env = env.copy()
 
                 for x, t in params:
-                    if t in env:
-                        new_env[x] = env[t]
+                    if x in env:
+                        new_env[x] = env[x]
                     else:
                         new_env[x] = t
 
@@ -310,13 +328,8 @@ def rco(prog: Program) -> Program:
         match e:
 
             case FieldRef(var, class_field):
-                new_v = gensym('tmp')
-                new_stmts.append(
-                    Assign(
-                        new_v,
-                        FieldRef(var, class_field)
-                    )
-                )
+                new_v = gensym("tmp")
+                new_stmts.append(Assign(new_v, FieldRef(var, class_field)))
                 return Var(new_v)
             case Call(func, args):
                 new_args = [rco_exp(e, new_stmts) for e in args]
@@ -343,46 +356,39 @@ def rco(prog: Program) -> Program:
             return Program(rco_stmts(stmts))
 
 
-''' Idea here:
+""" Idea here:
 - So we wat to turm field refs to tuple calls
 - class creatioms to tuples 
 - amd we wamt to turm class defs imto somethimg that still exists im the prog vut 
     they domt mecessarily meed to ve im the program (Mo imstructiom exists im x86 to defime classes...)
 some of my keys domt work srry - Mora
-'''
+"""
+
+
 def create_classes(prog: Program) -> Program:
     data_types: Dict[str, int] = {}
 
     def get_field_pos(class_name, field):
-
         for i, class_field in enumerate(class_types[class_name].vars):
             if field == class_field[0]:
                 return i
         raise Exception("Create classes. Field not found", class_name, field)
-
 
     def cc_exp(e: Expr):
         match e:
             case FieldRef(var, field_name):
                 class_name = class_var_types[var.name]
                 subscript_pos = get_field_pos(class_name, field_name)
-                return Prim("subscript",[
-                    var,
-                    Constant(subscript_pos)
-                ])
+                return Prim("subscript", [var, Constant(subscript_pos)])
             case Call(func, args):
                 if func.name in class_types.keys():
-                    return Prim(
-                        'tuple',
-                        args
-                    )
+                    return Prim("tuple", args)
                 else:
                     return e
             case Prim() | Constant() | Var():
                 return e
             case _:
                 raise Exception("explicate_exp", e)
-
 
     def cc_stmt(stmt):
         match stmt:
@@ -401,12 +407,9 @@ def create_classes(prog: Program) -> Program:
 
                 new_then_stmts = cc_exp(then_stmts)
 
-
                 new_else_stmts = cc_exp(else_stmts)
 
-                if_stmt = cif.If(
-                    cc_exp(condition), new_then_stmts, new_else_stmts
-                )
+                if_stmt = cif.If(cc_exp(condition), new_then_stmts, new_else_stmts)
                 return if_stmt
             case While(Begin(condition_stmts, condition_exp), body_stmts):
 
@@ -415,11 +418,7 @@ def create_classes(prog: Program) -> Program:
                 new_condition_exp = cc_exp(condition_exp)
 
                 return While(
-                    Begin(
-                        new_condition_stmts,
-                        new_condition_exp
-                    ),
-                    new_body_stmts
+                    Begin(new_condition_stmts, new_condition_exp), new_body_stmts
                 )
             case FunctionDef(name, params, body, ret_type):
                 fun_stmts = cc_stmts(body)
@@ -432,8 +431,9 @@ def create_classes(prog: Program) -> Program:
         for stmt in stmts:
             new_stmt = cc_stmt(stmt)
             if new_stmt:
-                new_stmts.append( new_stmt )
+                new_stmts.append(new_stmt)
         return new_stmts
+
     match prog:
         case Program(stmts):
             new_stmts = cc_stmts(stmts)
@@ -1447,7 +1447,7 @@ if __name__ == "__main__":
 
             try:
                 program = f.read()
-                #parse(program)
+                # parse(program)
 
                 x86_program = run_compiler(program, logging=True)
 
