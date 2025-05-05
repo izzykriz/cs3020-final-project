@@ -49,7 +49,14 @@ def print_program(p):
                 return decl + '\n' + b
             case ClassDef(name, superclass, body):
                 decl = f'class {name}({superclass}):\n'
-                fields = '\n'.join([f'    {x}: {print_type(t)}' for x, t in body])
+                fields = ''
+                for field in body:
+                    if type(field) is tuple:
+                        fields += field[0] + ': ' + print_type(field[1])
+                    else:
+                        fields += print_stmt(field)
+                fields += '\n'
+                # fields = '\n'.join([f'    {x}: {print_type(t)}' for x, t in body])
                 return decl + fields
             case _:
                 raise Exception('print_stmt', s)
