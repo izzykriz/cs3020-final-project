@@ -1,3 +1,5 @@
+import ast
+
 from .python_ast import *
 
 # ==================================================
@@ -21,6 +23,8 @@ def print_program(p):
 
     def print_stmt(s, indent=0):
         match s:
+            case Call():
+                print_expr(s)
             case Print(e):
                 return ' '*indent + f'print({print_expr(e)})'
             case Return(e):
@@ -55,7 +59,7 @@ def print_program(p):
                         fields += field[0] + ': ' + print_type(field[1])
                     else:
                         fields += print_stmt(field)
-                fields += '\n'
+                    fields += '\n'
                 # fields = '\n'.join([f'    {x}: {print_type(t)}' for x, t in body])
                 return decl + fields
             case _:
@@ -63,6 +67,8 @@ def print_program(p):
 
     def print_expr(e):
         match e:
+            case ast.Attribute(name):
+                return name
             case Prim(op, args):
                 args_str = ', '.join([print_expr(a) for a in args])
                 return f'{op}({args_str})'
