@@ -53,6 +53,9 @@ def parse(s):
                 return Print(trans_expr(e))
             case ast.Assign([ast.Name(n)], e):
                 return Assign(n, trans_expr(e))
+
+            #case ast.Assign
+
             case ast.If(e1, stmts1, stmts2):
                 return If(trans_expr(e1),
                           trans_stmts(stmts1),
@@ -76,7 +79,7 @@ def parse(s):
                 if ast.Pass() in decls:
                     new_decls = []
                 else:
-                    [trans_classdef(d) for d in decls]
+                    new_decls = [trans_classdef(d) for d in decls]
                 return ClassDef(name, None, new_decls)
 
             case ast.ClassDef(name, [ast.Name(x)], [], [ast.Pass()], []):

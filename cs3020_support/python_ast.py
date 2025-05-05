@@ -64,6 +64,7 @@ class FunctionDef(Stmt):
 
 @dataclass(frozen=True, eq=True)
 class ClassDef(Stmt):
+    # todo: does this need to change?
     name: str
     superclass: str
     body: List[Stmt]

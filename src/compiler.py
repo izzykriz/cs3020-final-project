@@ -1437,6 +1437,7 @@ def run_compiler(s, logging=False):
 
 
 if __name__ == "__main__":
+
     if len(sys.argv) != 2:
         print("Usage: python compiler.py <source filename>")
     else:
