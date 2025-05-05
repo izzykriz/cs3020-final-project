@@ -94,6 +94,9 @@ def parse(s):
                 new_decls = [] if ast.Pass() in decls else [trans_classdef(d) for d in decls]
                 return ClassDef(name, x, new_decls)
 
+            case ast.AnnAssign(ast.Name(x), t, _, _):
+                return (x, get_type(t))
+
             case _:
                 raise Exception('trans_stmt', s)
 
