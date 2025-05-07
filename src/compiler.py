@@ -331,6 +331,19 @@ def rco(prog: Program) -> Program:
             case Return(e):
                 return Return(rco_exp(e, new_stmts))
             case Assign(x, e1):
+                if "." in x:
+                    x = x.split(".")
+                    args = []
+
+                    for _, (var, _) in enumerate(
+                        class_types[class_var_types[x[0]]].vars
+                    ):
+                        if var != x[1]:
+                            args.append(FieldRef(Var(x[0]), var))
+                        else:
+                            args.append(e1)
+                    e1 = Call(Var(class_var_types[x[0]]), args)
+                    x = x[0]
                 new_e1 = rco_exp(e1, new_stmts)
                 return Assign(x, new_e1)
             case Print(e1):
@@ -1433,7 +1446,7 @@ allocate_alloc:
 
 compiler_passes = {
     "typecheck": typecheck,
-    "remove complex opera*": rco,
+    "remove complex opera": rco,
     "typecheck2": typecheck,
     "create classes": create_classes,
     "explicate control": explicate_control,
@@ -1464,9 +1477,9 @@ def run_compiler(s, logging=False):
         elif isinstance(current_program, cif.CProgram):
             print(cif.print_program(current_program))
 
-        print()
-        print("Abstract syntax:")
-        print(print_ast(current_program))
+        # print()
+        # print("Abstract syntax:")
+        # print(print_ast(current_program))
 
     current_program = parse(s)
 
