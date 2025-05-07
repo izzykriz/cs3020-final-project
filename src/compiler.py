@@ -71,6 +71,7 @@ class CustomType:
     __class_name__: str
     superclass: str
     vars: List[tuple[str, type]]
+    funcs: List[tuple[str, type]]
 
 
 def typecheck(program: Program) -> Program:
@@ -118,6 +119,19 @@ def typecheck(program: Program) -> Program:
         else:
             return t1 == t2 or compare_types(class_types[t1].superclass, t2)
 
+    def find_class_field(classname, class_field):
+        for field in class_types[classname].vars:
+            if field[0] == class_field:
+                return field[1]
+
+        for field in class_types[classname].funcs:
+            if field[0] in [class_field, classname + class_field]:
+                return field[1]
+
+        if not class_types[classname].superclass:
+            raise Exception(f"Unable to find a class field named {class_field}")
+        return find_class_field(class_types[classname].superclass, class_field)
+
     def tc_exp(e: Expr, env: TEnv) -> type:
         match e:
             case FieldRef(var, class_field):
@@ -129,10 +143,9 @@ def typecheck(program: Program) -> Program:
                 assert isinstance(
                     type_of_var, str
                 )  # We are saving CustomClasses as strings
-                for field in class_types[type_of_var].vars:
-                    if field[0] == class_field:
-                        return field[1]
-                raise Exception(f"field {class_field} not found")
+                return find_class_field(
+                    type_of_var, class_field.replace(type_of_var, "")
+                )
 
             case Call(func, args):
                 arg_types = []
@@ -151,11 +164,7 @@ def typecheck(program: Program) -> Program:
                         # A class must be defined for the function call
                         assert class_name in class_types
                         # All the class fields must be the fields we construct with
-                        class_fields = [
-                            var
-                            for var in class_types[class_name].vars
-                            if not isinstance(var[1], Callable)
-                        ]
+                        class_fields = [var for var in class_types[class_name].vars]
                         param_types = [field[1] for field in class_fields]
                         assert compare_types_list(arg_types, param_types)
                         return class_name
@@ -204,9 +213,11 @@ def typecheck(program: Program) -> Program:
                         __class_name__=name,
                         superclass=superclass if superclass else None,
                         vars=[],
+                        funcs=[],
                     )
                     if superclass:
                         class_types[name].vars += class_types[superclass].vars
+                        class_types[name].funcs += class_types[superclass].funcs
 
                 # Calling class name returns a constructor of the class
                 env[name] = name
@@ -221,11 +232,15 @@ def typecheck(program: Program) -> Program:
                             ),
                             env,
                         )
-                        class_types[name].vars.append((line.name, env[line.name]))
+                        if (line.name, env[line.name]) not in class_types[name].funcs:
+                            class_types[name].funcs.append((line.name, env[line.name]))
                     else:
                         varname = line[0]
                         env[name + varname] = line[1]
-                        class_types[name].vars.append((varname, env[name + varname]))
+                        if (varname, env[name + varname]) not in class_types[name].vars:
+                            class_types[name].vars.append(
+                                (varname, env[name + varname])
+                            )
 
             case FunctionDef(name, params, body_stmts, return_type):
                 function_names.add(name)
@@ -312,6 +327,16 @@ def rco(prog: Program) -> Program:
     :return: An Lfun program with atomic operator arguments.
     """
 
+    def find_class_func(classname, funcname):
+        new_funcname = classname + funcname
+        for func, _ in class_types[classname].funcs:
+            if func == new_funcname:
+                return new_funcname
+
+        if not class_types[classname].superclass:
+            raise Exception(f"Unable to find a class function named {funcname}")
+        return find_class_func(class_types[classname].superclass, funcname)
+
     def rco_stmt(stmt: Stmt, new_stmts: List[Stmt]) -> Stmt:
         match stmt:
 
@@ -381,10 +406,10 @@ def rco(prog: Program) -> Program:
             case Call(func, args):
                 new_args = []
                 if isinstance(func, FieldRef):
-                    func = FieldRef(
-                        func.lhs, class_var_types[func.lhs.name] + func.field
-                    )
-                    new_args.append(rco_exp(func.lhs, new_stmts))
+                    var = func.lhs
+                    funcname = find_class_func(class_var_types[var.name], func.field)
+                    func = FieldRef(var, funcname)
+                    new_args.append(rco_exp(var, new_stmts))
                 new_args += [rco_exp(e, new_stmts) for e in args]
                 new_func = rco_exp(func, new_stmts)
                 new_e = Call(new_func, new_args)
@@ -425,6 +450,9 @@ def create_classes(prog: Program) -> Program:
         for i, class_field in enumerate(class_types[class_name].vars):
             if field == class_field[0]:
                 return i
+        for i, class_field in enumerate(class_types[class_name].funcs):
+            if field == class_field[0]:
+                return len(class_types[class_name].vars) + i
         raise Exception("Create classes. Field not found", class_name, field)
 
     def cc_exp(e: Expr):
@@ -437,11 +465,7 @@ def create_classes(prog: Program) -> Program:
                 if isinstance(func, FieldRef):
                     return cc_exp(func)
                 if func.name in class_types.keys():
-                    class_funcs = [
-                        Var(f[0])
-                        for f in class_types[func.name].vars
-                        if isinstance(f[1], Callable)
-                    ]
+                    class_funcs = [Var(f[0]) for f in class_types[func.name].funcs]
                     return Prim("tuple", args + class_funcs)
                 else:
                     return e
