@@ -69,6 +69,7 @@ class Callable:
 @dataclass
 class CustomType:
     __class_name__: str
+    superclass: str
     vars: List[tuple[str, type]]
 
 
@@ -105,6 +106,18 @@ def typecheck(program: Program) -> Program:
         "lte": bool,
     }
 
+    def compare_types_list(t1, t2):
+        assert len(t1) == len(t2)
+        for i in range(len(t1)):
+            return compare_types(t1[i], t2[i])
+        return True
+
+    def compare_types(t1, t2):
+        if t1 not in class_types.keys():
+            return t1 == t2
+        else:
+            return t1 == t2 or compare_types(class_types[t1].superclass, t2)
+
     def tc_exp(e: Expr, env: TEnv) -> type:
         match e:
             case FieldRef(var, class_field):
@@ -129,7 +142,7 @@ def typecheck(program: Program) -> Program:
 
                 match tc_exp(func, env):
                     case Callable(param_types, return_type):
-                        assert param_types == arg_types
+                        assert compare_types_list(arg_types, param_types)
                         return return_type
                     case str() as class_name:
 
@@ -142,7 +155,7 @@ def typecheck(program: Program) -> Program:
                             if not isinstance(var[1], Callable)
                         ]
                         param_types = [field[1] for field in class_fields]
-                        assert param_types == arg_types
+                        assert compare_types_list(arg_types, param_types)
                         return class_name
 
                     case t:
@@ -158,7 +171,7 @@ def typecheck(program: Program) -> Program:
                 else:
                     raise Exception("tc_exp", e)
             case Prim("eq", [e1, e2]):
-                assert tc_exp(e1, env) == tc_exp(e2, env)
+                assert compare_types(tc_exp(e1, env), tc_exp(e2, env))
                 return bool
             case Begin(stmts, e1):
                 tc_stmts(stmts, env)
@@ -173,7 +186,7 @@ def typecheck(program: Program) -> Program:
                 return t[i]
             case Prim(op, args):
                 arg_types = [tc_exp(a, env) for a in args]
-                assert arg_types == prim_arg_types[op]
+                assert compare_types_list(arg_types, prim_arg_types[op])
                 return prim_output_types[op]
             case _:
                 raise Exception("tc_exp", e)
@@ -185,7 +198,13 @@ def typecheck(program: Program) -> Program:
                 # Add name to class environment
                 # add variables to type check
                 if name not in class_types.keys():
-                    class_types[name] = CustomType(__class_name__=name, vars=[])
+                    class_types[name] = CustomType(
+                        __class_name__=name,
+                        superclass=superclass if superclass else None,
+                        vars=[],
+                    )
+                    if superclass:
+                        class_types[name].vars += class_types[superclass].vars
 
                 # Calling class name returns a constructor of the class
                 env[name] = name
@@ -241,13 +260,13 @@ def typecheck(program: Program) -> Program:
                         tuple_var_types[x] = new_env[x]
 
             case Return(e):
-                assert env["return value"] == tc_exp(e, env)
+                assert compare_types(env["return value"], tc_exp(e, env))
 
             case While(condition, body_stmts):
-                assert tc_exp(condition, env) == bool
+                assert compare_types(tc_exp(condition, env), bool)
                 tc_stmts(body_stmts, env)
             case If(condition, then_stmts, else_stmts):
-                assert tc_exp(condition, env) == bool
+                assert compare_types(tc_exp(condition, env), bool)
                 tc_stmts(then_stmts, env)
                 tc_stmts(else_stmts, env)
             case Print(e):
@@ -255,7 +274,7 @@ def typecheck(program: Program) -> Program:
             case Assign(x, e):
                 t_e = tc_exp(e, env)
                 if x in env:
-                    assert t_e == env[x]
+                    assert compare_types(t_e, env[x])
                 else:
                     env[x] = t_e
             case _:
@@ -346,6 +365,11 @@ def rco(prog: Program) -> Program:
         match e:
 
             case FieldRef(var, class_field):
+                if isinstance(var, FieldRef):
+                    new_lhs = gensym("tmp")
+                    new_rhs = rco_exp(var, new_stmts)
+                    new_stmts.append(Assign(new_lhs, FieldRef(new_rhs, class_field)))
+                    return Var(new_lhs)
                 new_v = gensym("tmp")
                 new_stmts.append(Assign(new_v, FieldRef(var, class_field)))
                 return Var(new_v)
@@ -1423,9 +1447,11 @@ compiler_passes = {
 
 
 def run_compiler(s, logging=False):
-    global tuple_var_types, function_names
+    global tuple_var_types, function_names, class_types, class_var_types
     tuple_var_types = {}
     function_names = set()
+    class_types = {}
+    class_var_types = {}
 
     def print_prog(current_program):
         print("Concrete syntax:")

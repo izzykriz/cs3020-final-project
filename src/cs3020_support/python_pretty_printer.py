@@ -31,6 +31,8 @@ def print_program(p):
             case Return(e):
                 return " " * indent + f"return {print_expr(e)}"
             case Assign(x, e):
+                if not isinstance(x, str):
+                    x = print_expr(x)
                 return " " * indent + f"{x} = {print_expr(e)}"
             case If(e1, stmts1, stmts2):
                 b1 = "\n".join([print_stmt(s, indent + 4) for s in stmts1])
@@ -56,12 +58,14 @@ def print_program(p):
                 return decl + "\n" + b
             case ClassDef(name, superclass, body):
                 decl = f"class {name}({superclass}):\n"
+                indent += 4
                 fields = ""
                 for field in body:
+                    fields += " " * indent
                     if type(field) is tuple:
                         fields += field[0] + ": " + print_type(field[1])
                     else:
-                        fields += print_stmt(field)
+                        fields += print_stmt(field, indent)
                     fields += "\n"
                 # fields = '\n'.join([f'    {x}: {print_type(t)}' for x, t in body])
                 return decl + fields
@@ -70,8 +74,10 @@ def print_program(p):
 
     def print_expr(e):
         match e:
+            case ast.Name(s):
+                return s
             case ast.Attribute(name):
-                return name
+                return print_expr(name)
             case Prim(op, args):
                 args_str = ", ".join([print_expr(a) for a in args])
                 return f"{op}({args_str})"

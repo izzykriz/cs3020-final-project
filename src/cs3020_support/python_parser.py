@@ -58,8 +58,13 @@ def parse(s):
             # NOTE: This is to handle calls to objects, don't know if it's correct
             case ast.Expr(ast.Call(name, args)):
                 return Call(name, args)
-            case ast.Assign([ast.Name(n)], e):
-                return Assign(n, trans_expr(e))
+            case ast.Assign([n], e):
+                name = ""
+                if isinstance(n, ast.Attribute):
+                    name = n.value.id + "." + n.attr
+                else:
+                    name = n.id
+                return Assign(name, trans_expr(e))
 
             # case ast.Assign
 
