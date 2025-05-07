@@ -434,15 +434,6 @@ def rco(prog: Program) -> Program:
             return Program(rco_stmts(stmts))
 
 
-""" Idea here:
-- So we wat to turm field refs to tuple calls
-- class creatioms to tuples 
-- amd we wamt to turm class defs imto somethimg that still exists im the prog vut 
-    they domt mecessarily meed to ve im the program (Mo imstructiom exists im x86 to defime classes...)
-some of my keys domt work srry - Mora
-"""
-
-
 def create_classes(prog: Program) -> Program:
     data_types: Dict[str, int] = {}
 
