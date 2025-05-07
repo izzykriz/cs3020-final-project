@@ -46,3 +46,8 @@ A pass `create_classes` after RCO that:
 ### Class functions
 - Encoded function names as <class_name><function_name> to allow repeated function names for different classes
 - Worked on the parser to allow function definitions inside classes
+
+## Limitations
+- Given a function for class Point named add(). defining a function Pointadd would not be allowed
+- You can only change class values inside a function if you return self. 
+Since tuples are immutable in principle, implementing this was unfeasible in the given timeframe.
