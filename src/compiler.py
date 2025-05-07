@@ -137,7 +137,9 @@ def typecheck(program: Program) -> Program:
             case Call(func, args):
                 arg_types = []
                 if isinstance(func, FieldRef):
-                    arg_types.append(tc_exp(func.lhs, env))
+                    t_lhs = tc_exp(func.lhs, env)
+                    func = FieldRef(func.lhs, t_lhs + func.field)
+                    arg_types.append(t_lhs)
                 arg_types += [tc_exp(a, env) for a in args]
 
                 match tc_exp(func, env):
@@ -212,28 +214,18 @@ def typecheck(program: Program) -> Program:
                     if isinstance(line, FunctionDef):
                         tc_stmt(
                             FunctionDef(
-                                name + "." + line.name,
+                                line.name,
                                 line.params,
                                 line.body,
                                 line.return_type,
                             ),
                             env,
                         )
-                        if (line.name, env[name + "." + line.name]) not in class_types[
-                            name
-                        ].vars:
-                            class_types[name].vars.append(
-                                (line.name, env[name + "." + line.name])
-                            )
+                        class_types[name].vars.append((line.name, env[line.name]))
                     else:
                         varname = line[0]
-                        env[name + "." + varname] = line[1]
-                        if (varname, env[name + "." + varname]) not in class_types[
-                            name
-                        ].vars:
-                            class_types[name].vars.append(
-                                (varname, env[name + "." + varname])
-                            )
+                        env[name + varname] = line[1]
+                        class_types[name].vars.append((varname, env[name + varname]))
 
             case FunctionDef(name, params, body_stmts, return_type):
                 function_names.add(name)
@@ -389,6 +381,9 @@ def rco(prog: Program) -> Program:
             case Call(func, args):
                 new_args = []
                 if isinstance(func, FieldRef):
+                    func = FieldRef(
+                        func.lhs, class_var_types[func.lhs.name] + func.field
+                    )
                     new_args.append(rco_exp(func.lhs, new_stmts))
                 new_args += [rco_exp(e, new_stmts) for e in args]
                 new_func = rco_exp(func, new_stmts)
@@ -806,6 +801,9 @@ def _select_instructions(current_function: str, prog: cif.CProgram) -> x86.X86Pr
                     x86.Movq(x86.Immediate(tag), x86.Deref("r11", 0)),
                 ]
                 for i, a in enumerate(args):
+                    if isinstance(a, cif.Var) and a.var in function_names:
+                        instrs.append(x86.Leaq(x86.GlobalVal(a.var), x86.Var(a.var)))
+
                     instrs.append(x86.Movq(si_expr(a), x86.Deref("r11", 8 * (i + 1))))
                 instrs.append(x86.Movq(x86.Reg("r11"), x86.Var(x)))
                 return instrs

@@ -1,5 +1,8 @@
-a = (1, 2)
+def func(a: int) -> int:
+    return a + 1
 
-a = (3, 2)
 
-print(a[0])
+b = func
+c = 2
+
+print(b(c))
